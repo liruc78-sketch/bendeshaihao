@@ -40,10 +40,10 @@
 
 <div id="sidebar">
   <div class="logo">本德筛号中心 | 后台</div>
-  <div class="nav-item active" onclick="switchTab('orders')">充值审核</div>
-  <div class="nav-item" onclick="switchTab('users')">用户管理</div>
-  <div class="nav-item" onclick="switchTab('prices')">动态价格管理</div>
-  <div class="nav-item" onclick="switchTab('settings')">系统设置</div>
+  <div class="nav-item active" id="nav-orders" onclick="switchTab('orders')">充值审核</div>
+  <div class="nav-item" id="nav-users" onclick="switchTab('users')">用户管理</div>
+  <div class="nav-item" id="nav-prices" onclick="switchTab('prices')">动态价格管理</div>
+  <div class="nav-item" id="nav-settings" onclick="switchTab('settings')">系统设置</div>
   <div style="margin-top:auto;padding:20px;"><button class="btn btn-danger" style="width:100%" onclick="sb.auth.signOut();location.reload()">退出登录</button></div>
 </div>
 
@@ -82,7 +82,9 @@ async function adminLogin() {
 
 function switchTab(tab) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  event.currentTarget.classList.add('active');
+  const activeNav = document.getElementById('nav-' + tab);
+  if (activeNav) activeNav.classList.add('active');
+  
   const c = document.getElementById('content');
   c.innerHTML = '加载中...';
   

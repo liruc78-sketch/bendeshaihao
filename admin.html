@@ -59,25 +59,70 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 let currentUser = null;
 
-sb.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user) {
-    const { data } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
+// 验证管理员身份并初始化
+async function checkAdminSession(session) {
+  if (!session?.user) return;
+  try {
+    const { data, error } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
     if (data?.role === 'admin') {
       currentUser = session.user;
       document.getElementById('login-screen').style.display = 'none';
       switchTab('orders');
     } else {
       alert('非管理员账号！');
-      sb.auth.signOut();
+      await sb.auth.signOut();
+      document.getElementById('login-screen').style.display = 'flex';
     }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// 监听状态变化
+sb.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+    if(session) checkAdminSession(session);
+  } else if (event === 'SIGNED_OUT') {
+    currentUser = null;
+    document.getElementById('login-screen').style.display = 'flex';
+  }
+});
+
+// 页面刷新时自动恢复登录
+sb.auth.getSession().then(({ data: { session }, error }) => {
+  if (error || !session) {
+    if (error) sb.auth.signOut();
+    document.getElementById('login-screen').style.display = 'flex';
+  } else {
+    checkAdminSession(session);
   }
 });
 
 async function adminLogin() {
-  const email = document.getElementById('admin-email').value;
+  const email = document.getElementById('admin-email').value.trim();
   const password = document.getElementById('admin-pwd').value;
-  const { error } = await sb.auth.signInWithPassword({ email, password });
-  if (error) alert(error.message);
+  if(!email || !password) return alert('请输入邮箱和密码');
+  
+  const btn = event.target;
+  btn.textContent = '登录中...';
+  btn.disabled = true;
+  
+  try {
+    // 核心修复：登录前强制清理可能损坏的旧会话
+    await sb.auth.signOut();
+    
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    
+    if(data?.session) {
+       await checkAdminSession(data.session);
+    }
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    btn.textContent = '登录后台';
+    btn.disabled = false;
+  }
 }
 
 function switchTab(tab) {

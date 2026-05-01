@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>本德筛号中心 - 超级后台</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{ --bg:#0d0f14; --bg2:#141720; --bg3:#1c2030; --border:#2a2f45; --text:#e8eaf0; --text2:#9199b8; --accent:#8b5cf6; --green:#2ecc7a; --red:#e05252; }
+  body{ background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; margin:0; display:flex; height:100vh; overflow:hidden; }
+  #sidebar{ width:240px; background:var(--bg2); border-right:1px solid var(--border); padding:20px 0; display:flex; flex-direction:column; }
+  .logo{ padding:0 20px 20px; font-size:18px; font-weight:bold; color:var(--accent); border-bottom:1px solid var(--border); margin-bottom:10px; }
+  .nav-item{ padding:12px 20px; cursor:pointer; color:var(--text2); transition:0.2s; }
+  .nav-item:hover, .nav-item.active{ background:var(--bg3); color:var(--text); border-right:3px solid var(--accent); }
+  #main{ flex:1; padding:30px; overflow-y:auto; }
+  .card{ background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:20px; margin-bottom:20px; }
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th, td{ padding:12px; text-align:left; border-bottom:1px solid var(--border); }
+  th{ color:var(--text2); }
+  .btn{ padding:6px 12px; border-radius:6px; border:none; cursor:pointer; color:#fff; font-size:12px; }
+  .btn-primary{ background:var(--accent); }
+  .btn-success{ background:var(--green); }
+  .btn-danger{ background:var(--red); }
+  .input{ background:var(--bg3); border:1px solid var(--border); color:#fff; padding:8px; border-radius:6px; width:100%; outline:none; }
+  .price-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:15px; }
+  .price-item{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .price-input{ width:80px; text-align:right; }
+</style>
+</head>
+<body>
+
+<div id="login-screen" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:999;">
+  <div class="card" style="width:300px;text-align:center;">
+    <h2 style="margin-top:0;color:var(--accent)">管理员登录</h2>
+    <input type="email" id="admin-email" class="input" placeholder="管理员邮箱" style="margin-bottom:15px;">
+    <input type="password" id="admin-pwd" class="input" placeholder="密码" style="margin-bottom:15px;">
+    <button class="btn btn-primary" style="width:100%;padding:10px;" onclick="adminLogin()">登录后台</button>
+  </div>
+</div>
+
+<div id="sidebar">
+  <div class="logo">本德筛号中心 | 后台</div>
+  <div class="nav-item active" onclick="switchTab('orders')">充值审核</div>
+  <div class="nav-item" onclick="switchTab('users')">用户管理</div>
+  <div class="nav-item" onclick="switchTab('prices')">动态价格管理</div>
+  <div class="nav-item" onclick="switchTab('settings')">系统设置</div>
+  <div style="margin-top:auto;padding:20px;"><button class="btn btn-danger" style="width:100%" onclick="sb.auth.signOut();location.reload()">退出登录</button></div>
+</div>
+
+<div id="main">
+  <h2 id="page-title" style="margin-top:0">加载中...</h2>
+  <div id="content" class="card"></div>
+</div>
+
+<script>
+const SUPABASE_URL='https://tdpavflqliqcxvougcdf.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkcGF2ZmxxbGlxY3h2b3VnY2RmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczMTE3OTUsImV4cCI6MjA5Mjg4Nzc5NX0.qPMFm-qq3B6SkHts0ghqOuBJ07jnfoF6ZB_rWMhpeZE';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+let currentUser = null;
+
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+    const { data } = await sb.from('profiles').select('role').eq('id', session.user.id).single();
+    if (data?.role === 'admin') {
+      currentUser = session.user;
+      document.getElementById('login-screen').style.display = 'none';
+      switchTab('orders');
+    } else {
+      alert('非管理员账号！');
+      sb.auth.signOut();
+    }
+  }
+});
+
+async function adminLogin() {
+  const email = document.getElementById('admin-email').value;
+  const password = document.getElementById('admin-pwd').value;
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) alert(error.message);
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  const c = document.getElementById('content');
+  c.innerHTML = '加载中...';
+  
+  if(tab === 'orders') loadOrders(c);
+  if(tab === 'users') loadUsers(c);
+  if(tab === 'prices') loadPrices(c);
+  if(tab === 'settings') loadSettings(c);
+}
+
+// --- 1. 充值审核 ---
+async function loadOrders(c) {
+  document.getElementById('page-title').innerText = '充值审核';
+  const { data } = await sb.from('recharge_orders').select('*,profiles(email)').order('created_at', {ascending: false});
+  c.innerHTML = `<table>
+    <tr><th>用户</th><th>USDT</th><th>积分</th><th>TXID</th><th>状态</th><th>时间</th><th>操作</th></tr>
+    ${(data||[]).map(o=>`<tr>
+      <td>${o.profiles?.email}</td><td>${o.usdt_amount}</td><td style="color:var(--green)">${o.points_amount}</td>
+      <td>${o.tx_hash||'-'}</td><td>${o.status}</td><td>${new Date(o.created_at).toLocaleString()}</td>
+      <td>${o.status==='pending'?`<button class="btn btn-success" onclick="approve('${o.id}','${o.user_id}',${o.points_amount})">通过</button> <button class="btn btn-danger" onclick="reject('${o.id}')">拒绝</button>`:'-'}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+async function approve(id, uid, pts) {
+  if(!confirm('确认通过？')) return;
+  const {data:p} = await sb.from('profiles').select('balance').eq('id',uid).single();
+  const newBal = parseFloat(p.balance) + parseFloat(pts);
+  await sb.from('recharge_orders').update({status:'approved'}).eq('id',id);
+  await sb.from('profiles').update({balance:newBal}).eq('id',uid);
+  await sb.from('balance_logs').insert({user_id:uid, type:'recharge', amount:pts, balance_before:p.balance, balance_after:newBal, note:'后台审核通过'});
+  switchTab('orders');
+}
+async function reject(id) {
+  if(!confirm('确认拒绝？')) return;
+  await sb.from('recharge_orders').update({status:'rejected'}).eq('id',id);
+  switchTab('orders');
+}
+
+// --- 2. 用户管理 ---
+async function loadUsers(c) {
+  document.getElementById('page-title').innerText = '用户管理';
+  const { data } = await sb.from('profiles').select('*').order('created_at', {ascending: false});
+  c.innerHTML = `<table>
+    <tr><th>邮箱</th><th>余额</th><th>角色</th><th>注册时间</th><th>操作</th></tr>
+    ${(data||[]).map(u=>`<tr>
+      <td>${u.email}</td><td style="color:var(--green);font-weight:bold;">${u.balance}</td><td>${u.role}</td><td>${new Date(u.created_at).toLocaleDateString()}</td>
+      <td><button class="btn btn-primary" onclick="adjustBal('${u.id}', ${u.balance})">调整积分</button></td>
+    </tr>`).join('')}
+  </table>`;
+}
+async function adjustBal(uid, curBal) {
+  const amt = prompt(`当前余额: ${curBal}\n请输入调整金额 (正数增加，负数扣除):`);
+  if(!amt || isNaN(amt)) return;
+  const newBal = parseFloat(curBal) + parseFloat(amt);
+  await sb.from('profiles').update({balance:newBal}).eq('id',uid);
+  await sb.from('balance_logs').insert({user_id:uid, type:'admin_adjust', amount:amt, balance_before:curBal, balance_after:newBal, note:'管理员后台调整'});
+  switchTab('users');
+}
+
+// --- 3. 动态价格管理 (核心新功能) ---
+const PRICE_KEYS = [
+  {k:'wsValid', n:'WS筛开通'}, {k:'wsActive', n:'WS筛活跃'}, {k:'wsGender', n:'WS性别年龄'},
+  {k:'tgValid', n:'TG筛开通'}, {k:'tgActive', n:'TG筛活跃'}, {k:'tgGender', n:'TG性别年龄'}, {k:'tgNameValid', n:'TG筛用户名'},
+  {k:'iosBlueValid', n:'IOS蓝号'}, {k:'iosValid', n:'IOS系统'},
+  {k:'fbValid', n:'FB筛开通'}, {k:'fbUid', n:'FB筛UID'},
+  {k:'viberValid', n:'Viber筛开通'}, {k:'viberActive', n:'Viber筛活跃'},
+  {k:'lineValid', n:'Line筛开通'}, {k:'lineGender', n:'Line性别年龄'},
+  {k:'phoneCheck', n:'空号检测'}, {k:'phoneModel', n:'手机型号'}, {k:'operatorStandard', n:'运营商检测'}, {k:'phoneActive', n:'号码活跃'},
+  {k:'zaloValid', n:'Zalo筛开通'}, {k:'zaloGender', n:'Zalo急速性别'},
+  {k:'tiktokUser', n:'TikTok用户名'}, {k:'tiktokValid', n:'TikTok筛开通'},
+  {k:'binanceValid', n:'币安开通'}, {k:'htxValid', n:'Htx开通'}, {k:'okxValid', n:'OKX开通'}, {k:'coinwValid', n:'CoinW开通'},
+  {k:'wxValid', n:'微信开通'}, {k:'rcsSystem', n:'RCS系统'}, {k:'amazonValid', n:'亚马逊开通'}, {k:'teamsValid', n:'Teams开通'},
+  {k:'linkedinValid', n:'领英开通'}, {k:'linkedinGender', n:'领英全格式'}, {k:'insValid', n:'INS开通'},
+  {k:'twitterValid', n:'推特开通'}, {k:'sidelineValid', n:'Sideline开通'}, {k:'dhlValid', n:'DHL开通'},
+  {k:'botimValid', n:'Botim开通'}, {k:'botimGender', n:'Botim性别'}
+];
+
+async function loadPrices(c) {
+  document.getElementById('page-title').innerText = '动态价格管理 (实时生效)';
+  const { data } = await sb.from('site_settings').select('value').eq('key', 'project_prices').single();
+  let prices = {};
+  if(data && data.value) { try { prices = JSON.parse(data.value); } catch(e){} }
+
+  let html = `<div style="margin-bottom:20px;color:var(--yellow)">修改后点击底部保存，前端用户和后端扣费将立即按新价格执行。</div><div class="price-grid">`;
+  PRICE_KEYS.forEach(item => {
+    const val = prices[item.k] !== undefined ? prices[item.k] : 0;
+    html += `<div class="price-item">
+      <span>${item.n} <span style="color:var(--text3);font-size:11px">(${item.k})</span></span>
+      <input type="number" id="price_${item.k}" class="input price-input" value="${val}" step="0.0001">
+    </div>`;
+  });
+  html += `</div><button class="btn btn-primary" style="margin-top:20px;width:200px;padding:12px;" onclick="savePrices()">💾 保存所有价格</button>`;
+  c.innerHTML = html;
+}
+
+async function savePrices() {
+  let newPrices = {};
+  PRICE_KEYS.forEach(item => {
+    newPrices[item.k] = parseFloat(document.getElementById(`price_${item.k}`).value) || 0;
+  });
+  await sb.from('site_settings').upsert({ key: 'project_prices', value: JSON.stringify(newPrices), updated_at: new Date().toISOString() });
+  alert('价格已实时更新！');
+}
+
+// --- 4. 系统设置 ---
+async function loadSettings(c) {
+  document.getElementById('page-title').innerText = '系统设置';
+  const { data } = await sb.from('site_settings').select('*');
+  const cfg = {}; (data||[]).forEach(s => cfg[s.key] = s.value);
+  
+  c.innerHTML = `
+    <div style="max-width:500px">
+      <div style="margin-bottom:15px"><label>USDT 兑换 积分 汇率</label><input type="text" id="cfg-rate" class="input" value="${cfg.usdt_to_points||'6.8'}"></div>
+      <div style="margin-bottom:15px"><label>TRC20 收款地址</label><input type="text" id="cfg-wallet" class="input" value="${cfg.usdt_wallet_address||''}"></div>
+      <div style="margin-bottom:15px"><label>自定义收款二维码 URL</label><input type="text" id="cfg-qr" class="input" value="${cfg.pay_qr_url||''}"></div>
+      <button class="btn btn-primary" onclick="saveSysSettings()">保存设置</button>
+    </div>
+  `;
+}
+async function saveSysSettings() {
+  await sb.from('site_settings').upsert([
+    {key:'usdt_to_points', value: document.getElementById('cfg-rate').value},
+    {key:'usdt_wallet_address', value: document.getElementById('cfg-wallet').value},
+    {key:'pay_qr_url', value: document.getElementById('cfg-qr').value}
+  ]);
+  alert('设置已保存');
+}
+</script>
+</body>
+</html>

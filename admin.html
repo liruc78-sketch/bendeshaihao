@@ -175,7 +175,10 @@ async function loadUsers(c) {
     <tr><th>邮箱</th><th>余额</th><th>角色</th><th>注册时间</th><th>操作</th></tr>
     ${(data||[]).map(u=>`<tr>
       <td>${u.email}</td><td style="color:var(--green);font-weight:bold;">${u.balance}</td><td>${u.role}</td><td>${new Date(u.created_at).toLocaleDateString()}</td>
-      <td><button class="btn btn-primary" onclick="adjustBal('${u.id}', ${u.balance})">调整积分</button></td>
+      <td style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="adjustBal('${u.id}', ${u.balance})">调整积分</button>
+        <button class="btn btn-danger" onclick="resetPwd('${u.id}', '${u.email}')">修改密码</button>
+      </td>
     </tr>`).join('')}
   </table>`;
 }
@@ -186,6 +189,33 @@ async function adjustBal(uid, curBal) {
   await sb.from('profiles').update({balance:newBal}).eq('id',uid);
   await sb.from('balance_logs').insert({user_id:uid, type:'admin_adjust', amount:amt, balance_before:curBal, balance_after:newBal, note:'管理员后台调整'});
   switchTab('users');
+}
+
+async function resetPwd(uid, email) {
+  const newPwd = prompt(`请输入用户 ${email} 的新密码 (至少6位):`);
+  if (!newPwd) return;
+  if (newPwd.length < 6) return alert('密码长度至少需要6位！');
+  if (!confirm(`确定将 ${email} 的密码修改为: ${newPwd} 吗？`)) return;
+
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const res = await fetch('https://tdpavflqliqcxvougcdf.supabase.co/functions/v1/th333-proxy?path=/api/internal/reset-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token
+      },
+      body: JSON.stringify({ targetUid: uid, newPassword: newPwd })
+    });
+    const data = await res.json();
+    if (data.code === 0) {
+      alert('密码修改成功！');
+    } else {
+      alert('修改失败: ' + data.message);
+    }
+  } catch (e) {
+    alert('网络错误: ' + e.message);
+  }
 }
 
 // --- 3. 动态价格管理 (核心新功能) ---

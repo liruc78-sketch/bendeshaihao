@@ -168,13 +168,30 @@ async function reject(id) {
 }
 
 // --- 2. 用户管理 ---
-async function loadUsers(c) {
+async function loadUsers(c, keyword = '') {
   document.getElementById('page-title').innerText = '用户管理';
-  const { data } = await sb.from('profiles').select('*').order('created_at', {ascending: false});
-  c.innerHTML = `<table>
-    <tr><th>邮箱</th><th>余额</th><th>角色</th><th>注册时间</th><th>操作</th></tr>
+  
+  // 构建查询
+  let query = sb.from('profiles').select('*').order('created_at', {ascending: false});
+  
+  // 如果有搜索关键词，则进行模糊匹配 (匹配邮箱或用户名)
+  if (keyword) {
+    query = query.or(`email.ilike.%${keyword}%,username.ilike.%${keyword}%`);
+  }
+  
+  const { data } = await query;
+  
+  c.innerHTML = `
+  <div style="display:flex; gap:10px; margin-bottom:20px;">
+    <input type="text" id="user-search-input" class="input" placeholder="搜索邮箱或用户名..." value="${keyword}" style="max-width:300px;" onkeydown="if(event.key==='Enter') loadUsers(document.getElementById('content'), this.value.trim())">
+    <button class="btn btn-primary" onclick="loadUsers(document.getElementById('content'), document.getElementById('user-search-input').value.trim())">搜索</button>
+    <button class="btn btn-secondary" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);" onclick="loadUsers(document.getElementById('content'), '')">重置</button>
+  </div>
+  <table>
+    <tr><th>邮箱</th><th>用户名</th><th>余额</th><th>角色</th><th>注册时间</th><th>操作</th></tr>
+    ${(data||[]).length === 0 ? `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text3)">未找到匹配的用户</td></tr>` : ''}
     ${(data||[]).map(u=>`<tr>
-      <td>${u.email}</td><td style="color:var(--green);font-weight:bold;">${u.balance}</td><td>${u.role}</td><td>${new Date(u.created_at).toLocaleDateString()}</td>
+      <td>${u.email}</td><td>${u.username||'-'}</td><td style="color:var(--green);font-weight:bold;">${u.balance}</td><td>${u.role}</td><td>${new Date(u.created_at).toLocaleDateString()}</td>
       <td style="display:flex;gap:8px;">
         <button class="btn btn-primary" onclick="adjustBal('${u.id}', ${u.balance})">调整积分</button>
         <button class="btn btn-danger" onclick="resetPwd('${u.id}', '${u.email}')">修改密码</button>
